@@ -163,7 +163,7 @@ def initialize_green_function(expmk, v, alpha, p_vec):
     return G, log_det_G, sign_det_G
 
 
-def update_Greens(expmk, v, l, p_vec):
+def update_Greens(expmk, v, l, p_vec, hubbard):
     # update greens matrix with sherman-morison algorithm
     Gu, log_det_G_up, sign_det_G_up = initialize_green_function(expmk, v, 1, p_vec)
     Gd, log_det_G_dn, sign_det_G_dn = initialize_green_function(expmk, v, -1, p_vec)
@@ -204,7 +204,7 @@ def logpartition(expmk, v, p_vec):
     return log_det_G_up + log_det_G_dn
 
 
-def wrap(Gu, Gd, v, expmk, expmmk, p_vec, l):
+def wrap(Gu, Gd, v, expmk, expmmk, p_vec, l, hubbard):
     # time wraping after space update
     v = np.roll(v, -1, axis=0)  # shift hubbard-stratonovich field -1 along time
     p_vec = np.roll(p_vec, -1, axis=0)  # shift the p_vec -1 step
@@ -242,50 +242,50 @@ def conf(v):
     return s
 
 
-# initialize Determinental Quantum monte carlo parameters
-hubbard = DQMC(t_x=1, t_y=1, t_xy=0, mu=0, U=4, DT=1/8,
-               beta=5, Nx=10, Ny=1, bnd_x=1, bnd_y=1)
-k = hubbard.kinetic()  # initialize kinetic matrix
-expmk = np.abs(LA.expm(-k))  # expm(k)
-expmmk = LA.expm(k)  # expm(-k)
+def main():
+    # initialize Determinental Quantum monte carlo parameters
+    hubbard = DQMC(t_x=1, t_y=1, t_xy=0, mu=0, U=4, DT=1/8,
+                   beta=5, Nx=10, Ny=1, bnd_x=1, bnd_y=1)
+    k = hubbard.kinetic()  # initialize kinetic matrix
+    expmk = np.abs(LA.expm(-k))  # expm(k)
+    expmmk = LA.expm(k)  # expm(-k)
 
-results = ("results-Beta%d-Nx%d-Ny%d-Mu%d-U%d-DT%f-boundary condition(%d,%d)-tx%d"%(hubbard.beta, hubbard.Nx, hubbard.Ny, hubbard.mu, hubbard.U, hubbard.DT, hubbard.bnd_x, hubbard.bnd_y, hubbard.t_x))
+    results = ("results-Beta%d-Nx%d-Ny%d-Mu%d-U%d-DT%f-boundary condition(%d,%d)-tx%d"%(hubbard.beta, hubbard.Nx, hubbard.Ny, hubbard.mu, hubbard.U, hubbard.DT, hubbard.bnd_x, hubbard.bnd_y, hubbard.t_x))
 
-try:
-    os.mkdir(results)
-except OSError as exc:
-    if exc.errno != errno.EEXIST:
-        raise
-    pass
+    try:
+        os.mkdir(results)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
+            raise
+        pass
 
-# generating p_vec: every k zeros there exists a 1.
-p_vec = np.zeros(hubbard.L)
-for i in range(10, hubbard.L, 10):
-    p_vec[i] = 1
-p_vec[-1] = 1
+    # generating p_vec: every k zeros there exists a 1.
+    p_vec = np.zeros(hubbard.L)
+    for i in range(10, hubbard.L, 10):
+        p_vec[i] = 1
+    p_vec[-1] = 1
 
+    iterations = 500  # monte carlo iterations
+    l_measurment = int(0.2*iterations)  # do measurments after 20% of iterations passed
+    markov = 200
 
-iterations = 500  # monte carlo iterations
-l_measurment = int(0.2*iterations)  # do measurments after 20% of iterations passed
-markov = 200
+    for i in range(markov):
+        v = hubbard.interaction()  # initialize interaction matrix
+        # np.load("v.npy")
+        t = time.time()
+        fosav = []
+        for msr in range(iterations):
+            t0 = time.time()
+            for l in range(hubbard.L):
 
-for i in range(markov):
-    v = hubbard.interaction()  # initialize interaction matrix
-    # np.load("v.npy")
-    t = time.time()
-    fosav = []
-    for msr in range(iterations):
-        t0 = time.time()
-        for l in range(hubbard.L):
-            
-            Gu, Gd, v = update_Greens(expmk, v, l, p_vec)   # sherman-morison
-            Gu, Gd, v, p_vec, Heff = wrap(Gu, Gd, v, expmk, expmmk, p_vec, l)  # time wrap
+                Gu, Gd, v = update_Greens(expmk, v, l, p_vec, hubbard)   # sherman-morison
+                Gu, Gd, v, p_vec, Heff = wrap(Gu, Gd, v, expmk, expmmk, p_vec, l, hubbard)  # time wrap
 
-        if msr > l_measurment:
-            fosav.append([Heff, v])  # effective hamiltonian and configuration for save
+            if msr > l_measurment:
+                fosav.append([Heff, v])  # effective hamiltonian and configuration for save
 
-        print("Running msr %d : %f s" % (msr, time.time()-t0))
+            print("Running msr %d : %f s" % (msr, time.time()-t0))
 
-    print("Running markov %d : %f s" % (i, time.time()-t))
+        print("Running markov %d : %f s" % (i, time.time()-t))
 
-    np.save(results+"/"+str(int(time.time())), fosav)
+        np.save(results+"/"+str(int(time.time())), fosav)
